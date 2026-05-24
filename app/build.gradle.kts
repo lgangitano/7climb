@@ -11,7 +11,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "io.github.climbintelligence"
+        applicationId = "io.github.climbintelligence.dev"
         minSdk = 23
         targetSdk = 35
         versionCode = 10
