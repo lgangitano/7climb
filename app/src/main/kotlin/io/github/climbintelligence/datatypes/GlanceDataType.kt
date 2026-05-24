@@ -15,6 +15,7 @@ import io.github.climbintelligence.data.model.PacingTarget
 import io.github.climbintelligence.data.model.RideMetrics
 import io.github.climbintelligence.data.model.WPrimeSample
 import io.github.climbintelligence.data.model.WPrimeState
+import io.github.climbintelligence.data.model.WPrimeStatus
 import io.github.climbintelligence.engine.PRComparison
 import io.github.climbintelligence.engine.TacticalAnalyzer
 import io.hammerhead.karooext.extension.DataTypeImpl
@@ -89,8 +90,36 @@ data class ClimbDisplayState(
             ),
             nextClimb = NextClimbInfo(
                 distanceToStart = 2300.0, etaSeconds = 500, hasNext = true
-            )
+            ),
+            wPrimeHistory = previewWPrimeHistory()
         )
+
+        /**
+         * Synthetic W' history for the data-field picker preview.
+         * 30 samples over 5 minutes shaped like intervals.icu's reference
+         * curve: smooth bleed → deficit dip → recovery. Lets the rider see
+         * what the chart looks like before adding it to a ride profile.
+         */
+        private fun previewWPrimeHistory(): List<WPrimeSample> {
+            val now = System.currentTimeMillis()
+            val wMax = 20000.0
+            return (0..29).map { i ->
+                val phase = i / 29.0
+                val pctOfMax = when {
+                    phase < 0.30 -> 1.0 - phase * 2.3                       //  100% → ~30%
+                    phase < 0.50 -> 0.3 - (phase - 0.30) * 2.5               //  ~30% → -20%
+                    phase < 0.70 -> -0.20 + (phase - 0.50) * 2.0             //  -20% → ~20%
+                    else         -> 0.20 + (phase - 0.70) * 1.5              //  ~20% → ~65%
+                }
+                val balance = wMax * pctOfMax
+                WPrimeSample(
+                    timestampMs = now - (29 - i) * 10_000L,                  // 10 s spacing
+                    balance = balance,
+                    percentage = pctOfMax * 100.0,
+                    power = if (pctOfMax > 0.3) 220 else if (pctOfMax > 0.0) 320 else 380
+                )
+            }
+        }
     }
 }
 
