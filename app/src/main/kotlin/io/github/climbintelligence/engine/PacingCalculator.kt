@@ -70,12 +70,30 @@ class PacingCalculator(private val preferencesRepository: PreferencesRepository)
     fun update(state: LiveClimbState, climb: ClimbInfo?) {
         if (!profile.isConfigured || !state.hasData) return
 
-        val grade = state.grade
         val altitude = state.altitude
         val speed = state.speed
 
-        // Calculate target power based on FTP and gradient physics
-        val targetPower = calculateTargetPower(grade, altitude)
+        // Effective grade for pacing:
+        //   - When an active climb has known remaining geometry (Karoo CLIMB
+        //     stream on routes + freestyle, OR route-polyline-derived
+        //     distanceToTop / elevationToTop when stream is silent), use the
+        //     remaining average grade (elevationToTop / distanceToTop). This
+        //     is the steady, self-correcting signal Luigi described: target
+        //     moves smoothly with the climb's actual shape instead of
+        //     jittering on every sensor blip.
+        //   - Otherwise (no active climb, or remaining fields not yet
+        //     populated) fall back to instant grade as before.
+        val effectiveGrade = if (
+            climb != null && climb.isActive &&
+            climb.distanceToTop > 0.0 && climb.elevationToTop > 0.0
+        ) {
+            (climb.elevationToTop / climb.distanceToTop) * 100.0
+        } else {
+            state.grade
+        }
+
+        // Calculate target power based on FTP and effective-gradient physics
+        val targetPower = calculateTargetPower(effectiveGrade, altitude)
         if (targetPower <= 0) {
             _target.value = PacingTarget()
             return
