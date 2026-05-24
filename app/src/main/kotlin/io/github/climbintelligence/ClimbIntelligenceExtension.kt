@@ -246,13 +246,19 @@ class ClimbIntelligenceExtension : KarooExtension("climbintelligence", BuildConf
                     }
                 }
 
-                // Wire active climb → "Climb Started" + "Summit Approaching" alerts (route climbs)
+                // Wire active climb → "Climb Started" + "Summit Approaching" alerts.
+                // Fires for route climbs (hasRouteMetrics) AND Karoo CLIMB-stream-driven
+                // climbs (length > 0 with distanceToTop > 0). With the homegrown detector
+                // disabled, both surviving paths carry a real total length — the 300m
+                // misleading alert is structurally impossible now.
                 connectionJobs += serviceScope.launch {
                     var climbStartFired = false
                     var summitAlertFired = false
                     var lastClimbId = ""
                     climbDataService.activeClimb.collect { climb ->
-                        if (climb == null || !climb.isActive || !climb.hasRouteMetrics) {
+                        val hasTrustedLength = climb != null && climb.isActive &&
+                            climb.length > 0.0 && climb.distanceToTop > 0.0
+                        if (!hasTrustedLength) {
                             if (climb?.id != lastClimbId) {
                                 climbStartFired = false
                                 summitAlertFired = false
@@ -260,6 +266,8 @@ class ClimbIntelligenceExtension : KarooExtension("climbintelligence", BuildConf
                             }
                             return@collect
                         }
+                        // After the trusted-length check above, climb is non-null
+                        @Suppress("NAME_SHADOWING") val climb = climb!!
                         if (climb.id != lastClimbId) {
                             climbStartFired = false
                             summitAlertFired = false
