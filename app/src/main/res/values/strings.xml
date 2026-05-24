@@ -40,6 +40,8 @@
     <string name="datatype_match_burn_desc">Above-CP match tracking with recovery timer</string>
     <string name="datatype_next_climb">Next Climb</string>
     <string name="datatype_next_climb_desc">Distance and ETA to next climb on route</string>
+    <string name="datatype_wprime_history">W\' History</string>
+    <string name="datatype_wprime_history_desc">W\' balance chart over the ride — green above zero, purple in deficit (reserve depth)</string>
 
     <!-- Labels -->
     <string name="label_grade">GRADE</string>

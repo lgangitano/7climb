@@ -13,6 +13,7 @@ import io.github.climbintelligence.data.model.MatchBurnState
 import io.github.climbintelligence.data.model.NextClimbInfo
 import io.github.climbintelligence.data.model.PacingTarget
 import io.github.climbintelligence.data.model.RideMetrics
+import io.github.climbintelligence.data.model.WPrimeSample
 import io.github.climbintelligence.data.model.WPrimeState
 import io.github.climbintelligence.engine.PRComparison
 import io.github.climbintelligence.engine.TacticalAnalyzer
@@ -44,7 +45,8 @@ data class ClimbDisplayState(
     val climbStats: ClimbStats = ClimbStats(),
     val rideMetrics: RideMetrics = RideMetrics(),
     val matchBurn: MatchBurnState = MatchBurnState(),
-    val nextClimb: NextClimbInfo = NextClimbInfo()
+    val nextClimb: NextClimbInfo = NextClimbInfo(),
+    val wPrimeHistory: List<WPrimeSample> = emptyList()
 ) {
     companion object {
         val PREVIEW = ClimbDisplayState(
@@ -203,7 +205,8 @@ abstract class GlanceDataType(
             climbStats = climbExtension.climbStatsTracker.state.value,
             rideMetrics = climbExtension.metricsEngine.state.value,
             matchBurn = climbExtension.matchBurnEngine.state.value,
-            nextClimb = climbExtension.climbDataService.nextClimb.value
+            nextClimb = climbExtension.climbDataService.nextClimb.value,
+            wPrimeHistory = climbExtension.wPrimeEngine.wPrimeHistory.value
         )
     }
 }
