@@ -41,6 +41,11 @@ class PreferencesRepository(private val context: Context) {
         private val KEY_ALERT_SOUND = booleanPreferencesKey("alert_sound")
         private val KEY_ALERT_COOLDOWN = intPreferencesKey("alert_cooldown")
         private val KEY_WPRIME_ALERT_THRESHOLD = intPreferencesKey("wprime_alert_threshold")
+        private val KEY_ALERT_WPRIME_DEFICIT = booleanPreferencesKey("alert_wprime_deficit")
+
+        // W' history chart settings (W'-history-chart feature)
+        private val KEY_WPRIME_CHART_WINDOW_MIN = intPreferencesKey("wprime_chart_window_min")
+        private val KEY_WPRIME_CHART_REDRAW_SEC = intPreferencesKey("wprime_chart_redraw_sec")
 
         // Detection settings
         private val KEY_DETECTION_SENSITIVITY = stringPreferencesKey("detection_sensitivity")
@@ -113,6 +118,28 @@ class PreferencesRepository(private val context: Context) {
 
     val wPrimeAlertThresholdFlow: Flow<Int> = context.dataStore.data
         .map { prefs -> prefs[KEY_WPRIME_ALERT_THRESHOLD] ?: 20 }
+        .distinctUntilChanged()
+
+    /** One-shot alert when W' crosses below 0% (DEFICIT). Default ON. */
+    val alertWPrimeDeficitFlow: Flow<Boolean> = context.dataStore.data
+        .map { prefs -> prefs[KEY_ALERT_WPRIME_DEFICIT] ?: true }
+        .distinctUntilChanged()
+
+    /**
+     * Visible window for the W' history chart, in minutes.
+     * 0 = full ride; 5–240 = rolling window. Default 0.
+     */
+    val wPrimeChartWindowMinutesFlow: Flow<Int> = context.dataStore.data
+        .map { prefs -> prefs[KEY_WPRIME_CHART_WINDOW_MIN] ?: 0 }
+        .distinctUntilChanged()
+
+    /**
+     * Minimum interval between chart Bitmap redraws, in seconds. Samples
+     * still append at 1Hz; only the chart bitmap regen is throttled.
+     * Default 2, range 1–10.
+     */
+    val wPrimeChartRedrawSecondsFlow: Flow<Int> = context.dataStore.data
+        .map { prefs -> prefs[KEY_WPRIME_CHART_REDRAW_SEC] ?: 2 }
         .distinctUntilChanged()
 
     // Detection settings
@@ -257,6 +284,24 @@ class PreferencesRepository(private val context: Context) {
 
     suspend fun updateWPrimeAlertThreshold(percent: Int) {
         context.dataStore.edit { it[KEY_WPRIME_ALERT_THRESHOLD] = percent.coerceIn(5, 50) }
+    }
+
+    suspend fun updateAlertWPrimeDeficit(enabled: Boolean) {
+        context.dataStore.edit { it[KEY_ALERT_WPRIME_DEFICIT] = enabled }
+    }
+
+    suspend fun updateWPrimeChartWindowMinutes(minutes: Int) {
+        // 0 = full ride; 5–240 = rolling window. Anything between 1 and 4 snaps to 5.
+        val clamped = when {
+            minutes <= 0 -> 0
+            minutes < 5  -> 5
+            else         -> minutes.coerceAtMost(240)
+        }
+        context.dataStore.edit { it[KEY_WPRIME_CHART_WINDOW_MIN] = clamped }
+    }
+
+    suspend fun updateWPrimeChartRedrawSeconds(seconds: Int) {
+        context.dataStore.edit { it[KEY_WPRIME_CHART_REDRAW_SEC] = seconds.coerceIn(1, 10) }
     }
 
     suspend fun updateDetectionSensitivity(sensitivity: DetectionSensitivity) {

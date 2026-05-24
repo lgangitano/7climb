@@ -77,6 +77,8 @@
     <string name="alert_wprime_detail_time">Empty in %1$ds — reduce power now</string>
     <string name="alert_wprime_detail_basic">Reduce power — save reserves</string>
     <string name="alert_wprime_empty">W\' depleted — recovery only</string>
+    <string name="alert_wprime_deficit_title">W\' DEFICIT %1$d%%</string>
+    <string name="alert_wprime_deficit_detail">Beyond model — W\'max may be under-tuned</string>
 
     <!-- Alerts: Steep Ahead -->
     <string name="alert_steep_title">%1$s in %2$dm</string>
