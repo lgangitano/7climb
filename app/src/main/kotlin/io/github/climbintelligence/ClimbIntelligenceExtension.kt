@@ -20,6 +20,7 @@ import io.github.climbintelligence.datatypes.glance.ClimbProfileGlanceDataType
 import io.github.climbintelligence.datatypes.glance.NextSegmentGlanceDataType
 import io.github.climbintelligence.datatypes.glance.CompactClimbGlanceDataType
 import io.github.climbintelligence.datatypes.glance.ClimbStatsGlanceDataType
+import io.github.climbintelligence.datatypes.glance.WPrimeHistoryGlanceDataType
 import io.github.climbintelligence.datatypes.glance.RideMetricsGlanceDataType
 import io.github.climbintelligence.datatypes.glance.PowerZonesGlanceDataType
 import io.github.climbintelligence.datatypes.glance.MatchBurnGlanceDataType
@@ -430,7 +431,8 @@ class ClimbIntelligenceExtension : KarooExtension("climbintelligence", BuildConf
             RideMetricsGlanceDataType(this),
             PowerZonesGlanceDataType(this),
             MatchBurnGlanceDataType(this),
-            NextClimbGlanceDataType(this)
+            NextClimbGlanceDataType(this),
+            WPrimeHistoryGlanceDataType(this)
         )
     }
 
