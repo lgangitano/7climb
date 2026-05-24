@@ -42,6 +42,7 @@ private fun statusText(status: WPrimeStatus): String = when (status) {
     WPrimeStatus.DEPLETING -> "DEPLETING"
     WPrimeStatus.CRITICAL -> "CRITICAL"
     WPrimeStatus.EMPTY -> "EMPTY"
+    WPrimeStatus.DEFICIT -> "DEFICIT"
 }
 
 private fun timeLabel(state: ClimbDisplayState): String {
