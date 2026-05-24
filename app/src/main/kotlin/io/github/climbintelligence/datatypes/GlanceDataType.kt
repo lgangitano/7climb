@@ -127,7 +127,7 @@ data class ClimbDisplayState(
 abstract class GlanceDataType(
     protected val climbExtension: ClimbIntelligenceExtension,
     typeId: String
-) : DataTypeImpl("climbintelligence", typeId) {
+) : DataTypeImpl("climbintelligence-dev", typeId) {
 
     companion object {
         private const val TAG = "GlanceDataType"

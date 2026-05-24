@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">7Climb</string>
-    <string name="extension_name">7Climb</string>
+    <string name="extension_name">7Climb (dev)</string>
 
     <!-- Notification -->
     <string name="notification_channel_name">Climb Intelligence</string>

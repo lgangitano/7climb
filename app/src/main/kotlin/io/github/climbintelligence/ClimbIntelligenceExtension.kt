@@ -59,7 +59,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class ClimbIntelligenceExtension : KarooExtension("climbintelligence", BuildConfig.VERSION_NAME) {
+class ClimbIntelligenceExtension : KarooExtension("climbintelligence-dev", BuildConfig.VERSION_NAME) {
 
     companion object {
         private const val TAG = "ClimbIntExtension"
