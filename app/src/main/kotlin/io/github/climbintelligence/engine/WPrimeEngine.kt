@@ -82,33 +82,40 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
 
     fun update(state: LiveClimbState) {
         if (!profileLoaded || cp == 0) return
-        if (!state.hasData || state.power == 0) return
+        // Gate ONLY on the presence of sensor data, not on power being non-zero.
+        // power == 0 is a legitimate observation (rider coasting, recovery phase) —
+        // the Skiba math handles it correctly (recovery branch applies). The prior
+        // code's early-return on power == 0 froze the model AND the history during
+        // coasting, hiding the recovery curve and leaving the chart empty for
+        // riders who hadn't yet pedaled at full power.
+        if (!state.hasData) return
 
         val now = state.timestamp
-        if (lastUpdateTime == 0L) {
-            lastUpdateTime = now
-            return
-        }
-
-        val rawDt = (now - lastUpdateTime) / 1000.0
-        lastUpdateTime = now
-        // Clamp dt: minimum 0.1s prevents freeze on same-timestamp events,
-        // maximum 5s caps large gaps (e.g. after pause)
-        val dt = rawDt.coerceIn(0.1, 5.0)
-
         val power = state.power.toDouble()
         val recovery = (wMax - wBalance) / TAU
 
-        val dW = if (power > cp) {
-            (recovery - (power - cp)) * dt
-        } else {
-            recovery * dt
-        }
+        // Compute balance delta only when we have a previous timestamp to diff
+        // against. On the very first tick we just seed lastUpdateTime + record
+        // the baseline sample — no dW, no compute, but the chart gets its
+        // first data point immediately rather than starting one tick late.
+        if (lastUpdateTime != 0L) {
+            val rawDt = (now - lastUpdateTime) / 1000.0
+            // Clamp dt: minimum 0.1s prevents freeze on same-timestamp events,
+            // maximum 5s caps large gaps (e.g. after pause)
+            val dt = rawDt.coerceIn(0.1, 5.0)
 
-        // Allow negative — that's the model's signal that W'max is calibrated too low.
-        // Cap above at wMax (can't exceed the model's max capacity) and floor at -wMax
-        // (sanity bound — a stuck-high sensor can't drift to absurd negatives).
-        wBalance = (wBalance + dW).coerceIn(-wMax, wMax)
+            val dW = if (power > cp) {
+                (recovery - (power - cp)) * dt
+            } else {
+                recovery * dt
+            }
+
+            // Allow negative — that's the model's signal that W'max is calibrated too low.
+            // Cap above at wMax (can't exceed the model's max capacity) and floor at -wMax
+            // (sanity bound — a stuck-high sensor can't drift to absurd negatives).
+            wBalance = (wBalance + dW).coerceIn(-wMax, wMax)
+        }
+        lastUpdateTime = now
 
         val pct = wBalance / wMax * 100.0
         val depletionRate = if (power > cp) (power - cp) else 0.0
@@ -134,7 +141,9 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
             status = WPrimeState.statusForPercentage(pct)
         )
 
-        // Append to history ring buffer + publish updated list
+        // Append to history every tick where sensor data is flowing — including
+        // coasting, including the very first tick (baseline). Drives the W'
+        // history chart's continuous live view across the entire ride.
         recordHistorySample(now, wBalance, pct, state.power)
     }
 
