@@ -64,6 +64,17 @@ private fun timeLabel(state: ClimbDisplayState): String {
     }
 }
 
+// Red while heading toward empty (a warning state — you're spending W'),
+// green while heading toward full (recovering). Matches the ▼/▲ symbol.
+private fun timeColor(state: ClimbDisplayState): androidx.compose.ui.graphics.Color {
+    val w = state.wPrime
+    return when {
+        w.timeToEmpty > 0 -> GlanceColors.Problem
+        w.timeToFull > 0 -> GlanceColors.Optimal
+        else -> GlanceColors.Label
+    }
+}
+
 @Composable
 private fun WPrimeSmall(state: ClimbDisplayState) {
     val hasData = state.live.hasData
@@ -110,7 +121,7 @@ private fun WPrimeMediumWide(state: ClimbDisplayState) {
                 WPrimeBar(pct, color)
             }
             if (time.isNotEmpty()) {
-                LabelText(time)
+                LabelText(time, color = timeColor(state))
             }
         }
     }
@@ -157,7 +168,7 @@ private fun WPrimeLarge(state: ClimbDisplayState) {
             MetricValueRow("STATUS", status, color, valueFontSize = 18, labelFontSize = 12)
             MetricValueRow("ENERGY", balanceKj, GlanceColors.White, valueFontSize = 18, labelFontSize = 12)
             if (time.isNotEmpty()) {
-                LabelText(time, fontSize = 12)
+                LabelText(time, fontSize = 12, color = timeColor(state))
             }
         }
     }

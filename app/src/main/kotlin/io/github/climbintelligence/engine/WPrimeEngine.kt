@@ -50,6 +50,11 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
          *  "at the rider's current sustained effort" which is what's
          *  actionable for pacing. */
         private const val TTE_TTF_SMOOTH_WINDOW_MS = 30_000L
+        /** Hold the published TTE/TTF horizon steady for this long, then
+         *  refresh. Even with 30 s-smoothed inputs the second-by-second value
+         *  drifts; the field is consumed at a glance, so a 5 s refresh cadence
+         *  reads as "stable" rather than "counting". */
+        private const val HORIZON_PUBLISH_INTERVAL_MS = 5_000L
     }
 
     private val _state = MutableStateFlow(WPrimeState())
@@ -83,6 +88,13 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
     /** Rolling 30 s power window for TTE/TTF smoothing. Holds (timestampMs,
      *  power) pairs trimmed every update() to entries within the window. */
     private val recentPowerWindow = ArrayDeque<Pair<Long, Int>>()
+
+    // Published (held) TTE/TTF horizons — refreshed at most every
+    // HORIZON_PUBLISH_INTERVAL_MS so the displayed countdown holds steady
+    // between refreshes instead of changing every tick.
+    private var publishedTimeToEmpty: Long = -1L
+    private var publishedTimeToFull: Long = -1L
+    private var lastHorizonPublishMs: Long = 0L
 
     /**
      * True while the Karoo ride is in [io.hammerhead.karooext.models.RideState.Paused].
@@ -193,13 +205,21 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
         // timeToEmpty only meaningful when balance is positive and depleting.
         // Round to the nearest 5 s so the displayed countdown doesn't jitter
         // by ±1-2 s from rate-window noise — pacing reads on a coarser scale.
-        val timeToEmpty = if (wBalance > 0 && smoothedDepletion > smoothedRecovery && smoothedDepletion > 0) {
+        val computedTimeToEmpty = if (wBalance > 0 && smoothedDepletion > smoothedRecovery && smoothedDepletion > 0) {
             roundTo5((wBalance / (smoothedDepletion - smoothedRecovery)).toLong().coerceAtMost(3600L))
         } else -1L
 
-        val timeToFull = if (smoothedRecovery > 0 && wBalance < wMax) {
+        val computedTimeToFull = if (smoothedRecovery > 0 && wBalance < wMax) {
             roundTo5(((wMax - wBalance) / smoothedRecovery).toLong().coerceAtMost(3600L))
         } else -1L
+
+        // Hold the published horizon steady for HORIZON_PUBLISH_INTERVAL_MS,
+        // then refresh — so the field updates on a ~5 s cadence, not 1 Hz.
+        if (lastHorizonPublishMs == 0L || now - lastHorizonPublishMs >= HORIZON_PUBLISH_INTERVAL_MS) {
+            publishedTimeToEmpty = computedTimeToEmpty
+            publishedTimeToFull = computedTimeToFull
+            lastHorizonPublishMs = now
+        }
 
         _state.value = WPrimeState(
             balance = wBalance,
@@ -207,8 +227,8 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
             percentage = pct,
             depletionRate = depletionRate,
             recoveryRate = recoveryRateVal,
-            timeToEmpty = timeToEmpty,
-            timeToFull = timeToFull,
+            timeToEmpty = publishedTimeToEmpty,
+            timeToFull = publishedTimeToFull,
             status = WPrimeState.statusForPercentage(pct),
             mpa = computeMpa(),
         )
@@ -335,6 +355,9 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
         sumPowerBelowCp = 0.0
         countPowerBelowCp = 0L
         recentPowerWindow.clear()
+        publishedTimeToEmpty = -1L
+        publishedTimeToFull = -1L
+        lastHorizonPublishMs = 0L
         historyBuffer.clear()
         _wPrimeHistory.value = emptyList()
         _state.value = WPrimeState(balance = wMax, maxBalance = wMax)
