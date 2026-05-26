@@ -43,6 +43,13 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
         private const val DT = 1.0    // 1 second update interval
         /** Ring-buffer cap for per-tick history. 86400 = 24h at 1Hz, ~2.8 MB. */
         const val MAX_HISTORY_SAMPLES = 86400
+        /** Rolling-window length for the smoothed power that drives the
+         *  TTE/TTF projections. Power fluctuates around CP every second on
+         *  real rides, so a per-tick projection flips between depletion and
+         *  recovery branches as noise; a 30 s mean reframes the question as
+         *  "at the rider's current sustained effort" which is what's
+         *  actionable for pacing. */
+        private const val TTE_TTF_SMOOTH_WINDOW_MS = 30_000L
     }
 
     private val _state = MutableStateFlow(WPrimeState())
@@ -72,6 +79,10 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
     // Rolling stats for the dynamic-τ formula. Reset on reset().
     private var sumPowerBelowCp: Double = 0.0
     private var countPowerBelowCp: Long = 0L
+
+    /** Rolling 30 s power window for TTE/TTF smoothing. Holds (timestampMs,
+     *  power) pairs trimmed every update() to entries within the window. */
+    private val recentPowerWindow = ArrayDeque<Pair<Long, Int>>()
 
     /**
      * True while the Karoo ride is in [io.hammerhead.karooext.models.RideState.Paused].
@@ -162,13 +173,30 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
         val depletionRate = if (power > cp) (power - cp) else 0.0
         val recoveryRateVal = if (power <= cp) recovery else 0.0
 
+        // Maintain the rolling power window (TTE/TTF smoothing). Trim entries
+        // older than the window from the front; append the current sample.
+        recentPowerWindow.addLast(now to state.power)
+        while (recentPowerWindow.isNotEmpty() &&
+               now - recentPowerWindow.first().first > TTE_TTF_SMOOTH_WINDOW_MS) {
+            recentPowerWindow.removeFirst()
+        }
+        val smoothedPower =
+            if (recentPowerWindow.isEmpty()) power
+            else recentPowerWindow.map { it.second.toDouble() }.average()
+
+        // Smoothed depletion / recovery used ONLY for the TTE/TTF horizons —
+        // the displayed `depletionRate` / `recoveryRate` and the chart still
+        // track instantaneous values so the rider sees real-time response.
+        val smoothedDepletion = if (smoothedPower > cp) (smoothedPower - cp) else 0.0
+        val smoothedRecovery = if (smoothedPower <= cp) recovery else 0.0
+
         // timeToEmpty only meaningful when balance is positive and depleting
-        val timeToEmpty = if (wBalance > 0 && depletionRate > recoveryRateVal && depletionRate > 0) {
-            (wBalance / (depletionRate - recoveryRateVal)).toLong().coerceAtMost(3600L)
+        val timeToEmpty = if (wBalance > 0 && smoothedDepletion > smoothedRecovery && smoothedDepletion > 0) {
+            (wBalance / (smoothedDepletion - smoothedRecovery)).toLong().coerceAtMost(3600L)
         } else -1L
 
-        val timeToFull = if (recoveryRateVal > 0 && wBalance < wMax) {
-            ((wMax - wBalance) / recoveryRateVal).toLong().coerceAtMost(3600L)
+        val timeToFull = if (smoothedRecovery > 0 && wBalance < wMax) {
+            ((wMax - wBalance) / smoothedRecovery).toLong().coerceAtMost(3600L)
         } else -1L
 
         _state.value = WPrimeState(
@@ -298,6 +326,7 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
         lastUpdateTime = 0L
         sumPowerBelowCp = 0.0
         countPowerBelowCp = 0L
+        recentPowerWindow.clear()
         historyBuffer.clear()
         _wPrimeHistory.value = emptyList()
         _state.value = WPrimeState(balance = wMax, maxBalance = wMax)
