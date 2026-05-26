@@ -55,6 +55,18 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
          *  drifts; the field is consumed at a glance, so a 5 s refresh cadence
          *  reads as "stable" rather than "counting". */
         private const val HORIZON_PUBLISH_INTERVAL_MS = 5_000L
+        /** Settle delay after the horizon direction changes (emptying ↔
+         *  filling). Right at a switch the 30 s power window still holds the
+         *  prior regime's samples, so the projection spikes to the 1 h cap
+         *  before the new effort registers. Withholding the number for 5 s
+         *  lets the window fill, so the value shown is real, not the cap
+         *  artifact. During the settle the field shows the direction symbol
+         *  with a "--" placeholder (no layout jump). Parameter-free — no
+         *  athlete-specific tuning. */
+        private const val HORIZON_SETTLE_MS = 5_000L
+        /** Sentinel in published TTE/TTF: 0 = "this direction, still settling"
+         *  (render symbol + "--"); -1 = not this direction; >0 = settled value. */
+        const val HORIZON_SETTLING = 0L
     }
 
     private val _state = MutableStateFlow(WPrimeState())
@@ -95,6 +107,11 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
     private var publishedTimeToEmpty: Long = -1L
     private var publishedTimeToFull: Long = -1L
     private var lastHorizonPublishMs: Long = 0L
+
+    // Horizon-direction tracking for the settle delay.
+    private enum class HorizonDir { NONE, EMPTYING, FILLING }
+    private var horizonDir: HorizonDir = HorizonDir.NONE
+    private var horizonDirSinceMs: Long = 0L
 
     /**
      * True while the Karoo ride is in [io.hammerhead.karooext.models.RideState.Paused].
@@ -213,12 +230,41 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
             roundTo5(((wMax - wBalance) / smoothedRecovery).toLong().coerceAtMost(3600L))
         } else -1L
 
-        // Hold the published horizon steady for HORIZON_PUBLISH_INTERVAL_MS,
-        // then refresh — so the field updates on a ~5 s cadence, not 1 Hz.
-        if (lastHorizonPublishMs == 0L || now - lastHorizonPublishMs >= HORIZON_PUBLISH_INTERVAL_MS) {
-            publishedTimeToEmpty = computedTimeToEmpty
-            publishedTimeToFull = computedTimeToFull
-            lastHorizonPublishMs = now
+        // Determine the current horizon direction and track when it last
+        // changed. A direction change resets the settle clock + the publish
+        // hold so the new direction re-settles before showing a number.
+        val currentDir = when {
+            computedTimeToEmpty > 0 -> HorizonDir.EMPTYING
+            computedTimeToFull > 0 -> HorizonDir.FILLING
+            else -> HorizonDir.NONE
+        }
+        if (currentDir != horizonDir) {
+            horizonDir = currentDir
+            horizonDirSinceMs = now
+            lastHorizonPublishMs = 0L
+        }
+        val settled = currentDir != HorizonDir.NONE &&
+            now - horizonDirSinceMs >= HORIZON_SETTLE_MS
+
+        when {
+            currentDir == HorizonDir.NONE -> {
+                publishedTimeToEmpty = -1L
+                publishedTimeToFull = -1L
+            }
+            !settled -> {
+                // Settling: expose the direction (so the symbol + "--"
+                // placeholder shows, no layout jump) but withhold the number.
+                publishedTimeToEmpty = if (currentDir == HorizonDir.EMPTYING) HORIZON_SETTLING else -1L
+                publishedTimeToFull = if (currentDir == HorizonDir.FILLING) HORIZON_SETTLING else -1L
+            }
+            else -> {
+                // Settled: refresh the real value on the 5 s hold cadence.
+                if (lastHorizonPublishMs == 0L || now - lastHorizonPublishMs >= HORIZON_PUBLISH_INTERVAL_MS) {
+                    publishedTimeToEmpty = if (currentDir == HorizonDir.EMPTYING) computedTimeToEmpty else -1L
+                    publishedTimeToFull = if (currentDir == HorizonDir.FILLING) computedTimeToFull else -1L
+                    lastHorizonPublishMs = now
+                }
+            }
         }
 
         _state.value = WPrimeState(
@@ -358,6 +404,8 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
         publishedTimeToEmpty = -1L
         publishedTimeToFull = -1L
         lastHorizonPublishMs = 0L
+        horizonDir = HorizonDir.NONE
+        horizonDirSinceMs = 0L
         historyBuffer.clear()
         _wPrimeHistory.value = emptyList()
         _state.value = WPrimeState(balance = wMax, maxBalance = wMax)
