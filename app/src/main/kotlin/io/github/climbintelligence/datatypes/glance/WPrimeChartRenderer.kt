@@ -57,7 +57,7 @@ object WPrimeChartRenderer {
     private const val FILL_ALPHA = 51            // ~20% alpha for fill area
     private const val LINE_STROKE_PX = 2.5f
     private const val ZERO_LINE_STROKE_PX = 1.0f
-    private const val AXIS_LABEL_TEXT_SIZE_PX = 11f
+    private const val AXIS_LABEL_TEXT_SIZE_PX = 13f
     private const val PILL_TEXT_SIZE_PX = 13f
     private const val FULL_LEFT_PAD = 28f        // room for kJ labels
     private const val FULL_RIGHT_PAD = 32f       // room for percent labels
@@ -353,11 +353,12 @@ object WPrimeChartRenderer {
         canvas.drawText("%.1f".format(yMin / 1000.0), plotLeft - 2f, bottomLabelY, labelPaintLeft)
         canvas.drawText("%.0f%%".format(yMin / wMax * 100.0), plotRight + 2f, bottomLabelY, labelPaintRight)
 
-        // Axis unit hints — small letters below the top label
+        // Left-axis unit hint — values on the left are pure numbers, so the
+        // 'kJ' hint clarifies them. The right axis labels already carry the
+        // '%' suffix, so no hint there (was duplicating information and
+        // looked like a stacked label).
         val hintPaint = Paint(labelPaintLeft).apply { textSize = AXIS_LABEL_TEXT_SIZE_PX - 1f; alpha = 180 }
         canvas.drawText("kJ", plotLeft - 2f, topLabelY + AXIS_LABEL_TEXT_SIZE_PX, hintPaint)
-        val hintRightPaint = Paint(hintPaint).apply { textAlign = Paint.Align.LEFT }
-        canvas.drawText("%", plotRight + 2f, topLabelY + AXIS_LABEL_TEXT_SIZE_PX, hintRightPaint)
 
         // ─── Time axis: start / mid / end labels ───
         if (samples.size >= 2) {
