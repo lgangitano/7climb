@@ -182,18 +182,21 @@ object WPrimeChartRenderer {
     }
 
     /**
-     * Compute Y range so 0 is always visible and the positive half always shows
-     * at least a fraction of W'max even when no samples are positive (gives the
-     * deficit case visual context).
+     * Compute Y range so 0 is always visible and the visible vertical extent
+     * matches the data — no imaginary negative headroom on positive-only rides.
+     *
+     *   - yMax: at least 20 % of wMax above zero so a deep-deficit ride still
+     *     shows positive headroom for visual context.
+     *   - yMin: 0 when no sample is negative (curve uses full plot height,
+     *     no `-10 %` label for data that never existed). When any sample IS
+     *     negative, expand to `-10 % of wMax` below zero so deficit values
+     *     get visible headroom under them.
      */
     private fun computeYRange(samples: List<WPrimeSample>, wMax: Double): Pair<Double, Double> {
         val minSample = samples.minOf { it.balance }
         val maxSample = samples.maxOf { it.balance }
-        // Show at least 20% of wMax above zero so positive headroom is visible
         val yMax = max(maxSample, wMax * 0.2)
-        // Show at least 10% of wMax below zero so the zero crossing is visible
-        // even on a sustained-positive ride
-        val yMin = min(minSample, -wMax * 0.1)
+        val yMin = if (minSample < 0) min(minSample, -wMax * 0.1) else 0.0
         return yMin to yMax
     }
 
