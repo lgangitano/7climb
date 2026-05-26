@@ -43,13 +43,18 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
         private const val DT = 1.0    // 1 second update interval
         /** Ring-buffer cap for per-tick history. 86400 = 24h at 1Hz, ~2.8 MB. */
         const val MAX_HISTORY_SAMPLES = 86400
-        /** Rolling-window length for the smoothed power that drives the
-         *  TTE/TTF projections. Power fluctuates around CP every second on
-         *  real rides, so a per-tick projection flips between depletion and
-         *  recovery branches as noise; a 30 s mean reframes the question as
-         *  "at the rider's current sustained effort" which is what's
-         *  actionable for pacing. */
-        private const val TTE_TTF_SMOOTH_WINDOW_MS = 30_000L
+        /** Trailing window over which the W'-balance trend is measured to
+         *  drive the TTE/TTF horizon. Direction + rate both come from the
+         *  *observed* balance slope over this window — not from smoothed
+         *  power, which lagged badly (a window full of pre-effort low power
+         *  claimed "recovering" while the balance was visibly falling). The
+         *  balance is the integral of (power − CP), so its slope is already
+         *  the right, naturally-smooth quantity. */
+        private const val TREND_WINDOW_MS = 30_000L
+        /** Deadband (J/s) on the balance slope — below this the rider is
+         *  holding steady; no horizon is shown. Avoids a flickery TTE/TTF
+         *  when W' is essentially flat. */
+        private const val TREND_DEADBAND_JPS = 3.0
         /** Hold the published TTE/TTF horizon steady for this long, then
          *  refresh. Even with 30 s-smoothed inputs the second-by-second value
          *  drifts; the field is consumed at a glance, so a 5 s refresh cadence
@@ -99,9 +104,10 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
     private var sumPowerBelowCp: Double = 0.0
     private var countPowerBelowCp: Long = 0L
 
-    /** Rolling 30 s power window for TTE/TTF smoothing. Holds (timestampMs,
-     *  power) pairs trimmed every update() to entries within the window. */
-    private val recentPowerWindow = ArrayDeque<Pair<Long, Int>>()
+    /** Trailing window of (timestampMs, wBalance) used to measure the W'
+     *  trend that drives the TTE/TTF horizon. Trimmed every update() to
+     *  TREND_WINDOW_MS. */
+    private val recentBalanceWindow = ArrayDeque<Pair<Long, Double>>()
 
     // Published (held) TTE/TTF horizons — refreshed at most every
     // HORIZON_PUBLISH_INTERVAL_MS so the displayed countdown holds steady
@@ -204,32 +210,29 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
         val depletionRate = if (power > cp) (power - cp) else 0.0
         val recoveryRateVal = if (power <= cp) recovery else 0.0
 
-        // Maintain the rolling power window (TTE/TTF smoothing). Trim entries
-        // older than the window from the front; append the current sample.
-        recentPowerWindow.addLast(now to state.power)
-        while (recentPowerWindow.isNotEmpty() &&
-               now - recentPowerWindow.first().first > TTE_TTF_SMOOTH_WINDOW_MS) {
-            recentPowerWindow.removeFirst()
+        // Maintain the balance-trend window, then derive direction + rate from
+        // the observed slope of W'balance over the window. This is the same
+        // quantity the rider watches move (the % going up or down), so the
+        // horizon can never contradict the visible trend — the prior
+        // smoothed-power approach could (and did, at ride start).
+        recentBalanceWindow.addLast(now to wBalance)
+        while (recentBalanceWindow.isNotEmpty() &&
+               now - recentBalanceWindow.first().first > TREND_WINDOW_MS) {
+            recentBalanceWindow.removeFirst()
         }
-        val smoothedPower =
-            if (recentPowerWindow.isEmpty()) power
-            else recentPowerWindow.map { it.second.toDouble() }.average()
+        val (oldTs, oldBalance) = recentBalanceWindow.first()
+        val spanSeconds = (now - oldTs) / 1000.0
+        // J/s: negative = depleting (heading to empty), positive = recovering.
+        val trendRate = if (spanSeconds >= 1.0) (wBalance - oldBalance) / spanSeconds else 0.0
 
-        // Smoothed depletion / recovery used ONLY for the TTE/TTF horizons —
-        // the displayed `depletionRate` / `recoveryRate` and the chart still
-        // track instantaneous values so the rider sees real-time response.
-        val smoothedDepletion = if (smoothedPower > cp) (smoothedPower - cp) else 0.0
-        val smoothedRecovery = if (smoothedPower <= cp) recovery else 0.0
-
-        // timeToEmpty only meaningful when balance is positive and depleting.
-        // Round to the nearest 5 s so the displayed countdown doesn't jitter
-        // by ±1-2 s from rate-window noise — pacing reads on a coarser scale.
-        val computedTimeToEmpty = if (wBalance > 0 && smoothedDepletion > smoothedRecovery && smoothedDepletion > 0) {
-            roundTo5((wBalance / (smoothedDepletion - smoothedRecovery)).toLong().coerceAtMost(3600L))
+        // timeToEmpty / timeToFull from the trend. Rounded to the nearest 5 s
+        // so the countdown reads coarsely, not jittery. Capped at 1 h.
+        val computedTimeToEmpty = if (trendRate < -TREND_DEADBAND_JPS && wBalance > 0) {
+            roundTo5((wBalance / -trendRate).toLong().coerceAtMost(3600L))
         } else -1L
 
-        val computedTimeToFull = if (smoothedRecovery > 0 && wBalance < wMax) {
-            roundTo5(((wMax - wBalance) / smoothedRecovery).toLong().coerceAtMost(3600L))
+        val computedTimeToFull = if (trendRate > TREND_DEADBAND_JPS && wBalance < wMax) {
+            roundTo5(((wMax - wBalance) / trendRate).toLong().coerceAtMost(3600L))
         } else -1L
 
         // Determine the current horizon direction. At full W' the horizon is
@@ -397,7 +400,7 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
         lastUpdateTime = 0L
         sumPowerBelowCp = 0.0
         countPowerBelowCp = 0L
-        recentPowerWindow.clear()
+        recentBalanceWindow.clear()
         publishedTimeToEmpty = -1L
         publishedTimeToFull = -1L
         lastHorizonPublishMs = 0L
