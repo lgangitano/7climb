@@ -60,7 +60,7 @@ object WPrimeChartRenderer {
     private const val AXIS_LABEL_TEXT_SIZE_PX = 13f
     private const val PILL_TEXT_SIZE_PX = 13f
     private const val FULL_LEFT_PAD = 28f        // room for kJ labels
-    private const val FULL_RIGHT_PAD = 32f       // room for percent labels
+    private const val FULL_RIGHT_PAD = 44f       // room for percent labels ("100%" at 13px would clip at 32)
     private const val FULL_BOTTOM_PAD = 14f      // room for time labels
     private const val FULL_TOP_PAD = 4f
     private const val MINI_PAD = 2f

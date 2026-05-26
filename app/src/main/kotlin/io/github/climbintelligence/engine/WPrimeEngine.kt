@@ -190,13 +190,15 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
         val smoothedDepletion = if (smoothedPower > cp) (smoothedPower - cp) else 0.0
         val smoothedRecovery = if (smoothedPower <= cp) recovery else 0.0
 
-        // timeToEmpty only meaningful when balance is positive and depleting
+        // timeToEmpty only meaningful when balance is positive and depleting.
+        // Round to the nearest 5 s so the displayed countdown doesn't jitter
+        // by ±1-2 s from rate-window noise — pacing reads on a coarser scale.
         val timeToEmpty = if (wBalance > 0 && smoothedDepletion > smoothedRecovery && smoothedDepletion > 0) {
-            (wBalance / (smoothedDepletion - smoothedRecovery)).toLong().coerceAtMost(3600L)
+            roundTo5((wBalance / (smoothedDepletion - smoothedRecovery)).toLong().coerceAtMost(3600L))
         } else -1L
 
         val timeToFull = if (smoothedRecovery > 0 && wBalance < wMax) {
-            ((wMax - wBalance) / smoothedRecovery).toLong().coerceAtMost(3600L)
+            roundTo5(((wMax - wBalance) / smoothedRecovery).toLong().coerceAtMost(3600L))
         } else -1L
 
         _state.value = WPrimeState(
@@ -279,6 +281,12 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
      * Falls back to TAU_BASE + TAU_FLOOR when no below-CP samples exist yet
      * (start of a ride before any coasting).
      */
+    /** Round a positive second count to the nearest 5 s, keeping a 5 s floor
+     *  so a still-positive horizon never rounds down to 0 (which would make
+     *  the field's label vanish for the final ticks). */
+    private fun roundTo5(seconds: Long): Long =
+        if (seconds <= 0) seconds else maxOf(5L, ((seconds + 2L) / 5L) * 5L)
+
     private fun currentTau(): Double {
         if (countPowerBelowCp == 0L) return TAU_BASE + TAU_FLOOR
         val avgBelow = sumPowerBelowCp / countPowerBelowCp

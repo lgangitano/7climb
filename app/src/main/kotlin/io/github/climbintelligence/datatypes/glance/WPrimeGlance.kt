@@ -45,13 +45,21 @@ private fun statusText(status: WPrimeStatus): String = when (status) {
     WPrimeStatus.DEFICIT -> "DEFICIT"
 }
 
+// Time-horizon symbols. ▼ = heading toward EMPTY (depleting), ▲ = heading
+// toward FULL (recovering). Distinct at a glance even on a tiny field, unlike
+// the old "TTE"/"TTF" whose only difference was an E vs F. Selection keys off
+// timeToEmpty / timeToFull directly — those are already computed from the
+// engine's 30s-smoothed power, so the symbol no longer flips at 1 Hz as
+// instantaneous power crosses CP (the prior bug, which keyed off the raw
+// depletionRate / recoveryRate and also blanked the field on edge ticks).
+private const val SYMBOL_EMPTYING = "▼"
+private const val SYMBOL_FILLING = "▲"
+
 private fun timeLabel(state: ClimbDisplayState): String {
     val w = state.wPrime
     return when {
-        w.depletionRate > 0 && w.timeToEmpty > 0 ->
-            "TTE ${PhysicsUtils.formatTime(w.timeToEmpty)}"
-        w.recoveryRate > 0 && w.timeToFull > 0 ->
-            "TTF ${PhysicsUtils.formatTime(w.timeToFull)}"
+        w.timeToEmpty > 0 -> "$SYMBOL_EMPTYING ${PhysicsUtils.formatTime(w.timeToEmpty)}"
+        w.timeToFull > 0 -> "$SYMBOL_FILLING ${PhysicsUtils.formatTime(w.timeToFull)}"
         else -> ""
     }
 }
