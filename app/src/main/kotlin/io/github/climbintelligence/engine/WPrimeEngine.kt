@@ -60,6 +60,16 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
     private var lastUpdateTime: Long = 0L
     private var profileLoaded = false
 
+    /**
+     * True while the Karoo ride is in [io.hammerhead.karooext.models.RideState.Paused].
+     * Set by [RideStateMonitor]. When paused, [update] is short-circuited and the
+     * engine is driven instead by [tickPauseRecovery] at 1 Hz — pause time
+     * accumulates toward W' refill at the same rate as coasting (Skiba P ≤ CP
+     * recovery branch with P = 0).
+     */
+    @Volatile
+    private var pauseActive: Boolean = false
+
     init {
         scope.launch {
             preferencesRepository.athleteProfileFlow.collect { profile ->
@@ -80,8 +90,15 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
         }
     }
 
+    fun setPaused(paused: Boolean) {
+        pauseActive = paused
+    }
+
     fun update(state: LiveClimbState) {
         if (!profileLoaded || cp == 0) return
+        // While the ride is paused, the recovery ticker owns the engine —
+        // skip real samples so we don't double-count pause time.
+        if (pauseActive) return
         // Gate ONLY on the presence of sensor data, not on power being non-zero.
         // power == 0 is a legitimate observation (rider coasting, recovery phase) —
         // the Skiba math handles it correctly (recovery branch applies). The prior
@@ -145,6 +162,51 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
         // coasting, including the very first tick (baseline). Drives the W'
         // history chart's continuous live view across the entire ride.
         recordHistorySample(now, wBalance, pct, state.power)
+    }
+
+    /**
+     * Apply one second of pure recovery — pause-time accounting.
+     *
+     * Driven by [RideStateMonitor]'s 1 Hz ticker while the Karoo ride is in
+     * Paused state, where no real power samples flow but Skiba's recovery
+     * branch still applies (P = 0 ≤ CP). Pause time accumulates toward
+     * W' refill at the same rate as coasting on the bike.
+     *
+     * Same invariants as [update]: profile-gated, dt clamped, balance kept
+     * in [-wMax, wMax], lastUpdateTime advanced, history sample appended at
+     * power = 0 so the chart shows a continuous curve through pause.
+     */
+    fun tickPauseRecovery(now: Long) {
+        if (!profileLoaded || cp == 0) return
+        if (!pauseActive) return // belt-and-suspenders; only run while paused
+
+        val recovery = (wMax - wBalance) / TAU
+
+        if (lastUpdateTime != 0L) {
+            val rawDt = (now - lastUpdateTime) / 1000.0
+            val dt = rawDt.coerceIn(0.1, 5.0)
+            wBalance = (wBalance + recovery * dt).coerceIn(-wMax, wMax)
+        }
+        lastUpdateTime = now
+
+        val pct = wBalance / wMax * 100.0
+        val recoveryRateVal = (wMax - wBalance) / TAU
+        val timeToFull = if (recoveryRateVal > 0 && wBalance < wMax) {
+            ((wMax - wBalance) / recoveryRateVal).toLong().coerceAtMost(3600L)
+        } else -1L
+
+        _state.value = WPrimeState(
+            balance = wBalance,
+            maxBalance = wMax,
+            percentage = pct,
+            depletionRate = 0.0,
+            recoveryRate = recoveryRateVal,
+            timeToEmpty = -1L,
+            timeToFull = timeToFull,
+            status = WPrimeState.statusForPercentage(pct)
+        )
+
+        recordHistorySample(now, wBalance, pct, power = 0)
     }
 
     private fun recordHistorySample(
