@@ -55,29 +55,25 @@ private fun statusText(status: WPrimeStatus): String = when (status) {
 private const val SYMBOL_EMPTYING = "▼"
 private const val SYMBOL_FILLING = "▲"
 
-// Horizon value sentinels (see WPrimeEngine.HORIZON_SETTLING): 0 means the
-// direction is known but the value is still settling — show "--" so the
-// symbol/colour are correct from the switch but no misleading number appears
-// until the 5 s settle completes.
+// During a direction-change settle the engine holds the PREVIOUS direction's
+// value, so there's no placeholder to render — a positive value is always a
+// real horizon. Hidden (both -1) at full W' and when there's no clear horizon.
 private fun timeLabel(state: ClimbDisplayState): String {
     val w = state.wPrime
     return when {
         w.timeToEmpty > 0 -> "$SYMBOL_EMPTYING ${PhysicsUtils.formatTime(w.timeToEmpty)}"
-        w.timeToEmpty == 0L -> "$SYMBOL_EMPTYING --"
         w.timeToFull > 0 -> "$SYMBOL_FILLING ${PhysicsUtils.formatTime(w.timeToFull)}"
-        w.timeToFull == 0L -> "$SYMBOL_FILLING --"
         else -> ""
     }
 }
 
 // Red while heading toward empty (a warning state — you're spending W'),
 // green while heading toward full (recovering). Matches the ▼/▲ symbol.
-// Applies during the settle window too (>= 0 covers the 0 sentinel).
 private fun timeColor(state: ClimbDisplayState): androidx.compose.ui.graphics.Color {
     val w = state.wPrime
     return when {
-        w.timeToEmpty >= 0 -> GlanceColors.Problem
-        w.timeToFull >= 0 -> GlanceColors.Optimal
+        w.timeToEmpty > 0 -> GlanceColors.Problem
+        w.timeToFull > 0 -> GlanceColors.Optimal
         else -> GlanceColors.Label
     }
 }

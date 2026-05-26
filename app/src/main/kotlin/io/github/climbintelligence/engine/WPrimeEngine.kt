@@ -64,9 +64,11 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
          *  with a "--" placeholder (no layout jump). Parameter-free — no
          *  athlete-specific tuning. */
         private const val HORIZON_SETTLE_MS = 5_000L
-        /** Sentinel in published TTE/TTF: 0 = "this direction, still settling"
-         *  (render symbol + "--"); -1 = not this direction; >0 = settled value. */
-        const val HORIZON_SETTLING = 0L
+        /** At or above this percentage the rider is treated as fully recovered
+         *  — the TTE/TTF horizon is hidden (nothing to recover to, not yet
+         *  spending). 99.5 because recovery asymptotes toward wMax and the
+         *  field rounds the percentage to a whole number. */
+        private const val FULL_PCT = 99.5
     }
 
     private val _state = MutableStateFlow(WPrimeState())
@@ -230,10 +232,10 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
             roundTo5(((wMax - wBalance) / smoothedRecovery).toLong().coerceAtMost(3600L))
         } else -1L
 
-        // Determine the current horizon direction and track when it last
-        // changed. A direction change resets the settle clock + the publish
-        // hold so the new direction re-settles before showing a number.
+        // Determine the current horizon direction. At full W' the horizon is
+        // hidden outright (nothing to recover to, not yet spending).
         val currentDir = when {
+            pct >= FULL_PCT -> HorizonDir.NONE
             computedTimeToEmpty > 0 -> HorizonDir.EMPTYING
             computedTimeToFull > 0 -> HorizonDir.FILLING
             else -> HorizonDir.NONE
@@ -243,29 +245,24 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
             horizonDirSinceMs = now
             lastHorizonPublishMs = 0L
         }
-        val settled = currentDir != HorizonDir.NONE &&
-            now - horizonDirSinceMs >= HORIZON_SETTLE_MS
 
-        when {
-            currentDir == HorizonDir.NONE -> {
-                publishedTimeToEmpty = -1L
-                publishedTimeToFull = -1L
-            }
-            !settled -> {
-                // Settling: expose the direction (so the symbol + "--"
-                // placeholder shows, no layout jump) but withhold the number.
-                publishedTimeToEmpty = if (currentDir == HorizonDir.EMPTYING) HORIZON_SETTLING else -1L
-                publishedTimeToFull = if (currentDir == HorizonDir.FILLING) HORIZON_SETTLING else -1L
-            }
-            else -> {
-                // Settled: refresh the real value on the 5 s hold cadence.
-                if (lastHorizonPublishMs == 0L || now - lastHorizonPublishMs >= HORIZON_PUBLISH_INTERVAL_MS) {
-                    publishedTimeToEmpty = if (currentDir == HorizonDir.EMPTYING) computedTimeToEmpty else -1L
-                    publishedTimeToFull = if (currentDir == HorizonDir.FILLING) computedTimeToFull else -1L
-                    lastHorizonPublishMs = now
-                }
+        if (currentDir == HorizonDir.NONE) {
+            // Full, or no clear horizon — hide the line.
+            publishedTimeToEmpty = -1L
+            publishedTimeToFull = -1L
+        } else if (now - horizonDirSinceMs >= HORIZON_SETTLE_MS) {
+            // Settled (≥5 s in this direction): refresh the real value on the
+            // hold cadence.
+            if (lastHorizonPublishMs == 0L || now - lastHorizonPublishMs >= HORIZON_PUBLISH_INTERVAL_MS) {
+                publishedTimeToEmpty = if (currentDir == HorizonDir.EMPTYING) computedTimeToEmpty else -1L
+                publishedTimeToFull = if (currentDir == HorizonDir.FILLING) computedTimeToFull else -1L
+                lastHorizonPublishMs = now
             }
         }
+        // else (direction changed, still settling): leave the published values
+        // untouched — keep showing the PREVIOUS direction's last value (e.g. a
+        // green ▲ recovery time) through the 5 s settle, then swap to the new
+        // direction once its value is real. No "--" placeholder, no jump.
 
         _state.value = WPrimeState(
             balance = wBalance,
