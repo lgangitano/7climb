@@ -44,6 +44,16 @@ sealed class ChartMode {
 
 object WPrimeChartRenderer {
 
+    /**
+     * Overrender factor. Glance scales bitmaps to fill the widget slot on
+     * the Karoo screen; bilinear upscaling softens text and lines, which is
+     * why other (Text-based) Glance fields look crisper than this chart.
+     * Rendering at this multiple of the caller's logical dimensions and
+     * letting Glance scale DOWN (a clean operation) closes the gap. The
+     * bitmap memory cost scales with the square: 280 × 160 × 3 × 3 × 4 B
+     * ≈ 1.5 MB, well within budget for a per-tick re-render.
+     */
+    private const val RENDER_SCALE = 3
     private const val FILL_ALPHA = 51            // ~20% alpha for fill area
     private const val LINE_STROKE_PX = 2.5f
     private const val ZERO_LINE_STROKE_PX = 1.0f
@@ -77,8 +87,11 @@ object WPrimeChartRenderer {
     ): Bitmap {
         val w = width.coerceAtLeast(1)
         val h = height.coerceAtLeast(1)
-        val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        // Overrender at RENDER_SCALE so Glance's Image scaler downsamples
+        // rather than upsamples — crisp text + lines at the device's DPI.
+        val bitmap = Bitmap.createBitmap(w * RENDER_SCALE, h * RENDER_SCALE, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
+        canvas.scale(RENDER_SCALE.toFloat(), RENDER_SCALE.toFloat())
 
         if (samples.isEmpty() || wMax <= 0.0) {
             return bitmap // blank for empty input
