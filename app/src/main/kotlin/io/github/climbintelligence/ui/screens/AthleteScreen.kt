@@ -24,13 +24,27 @@ fun AthleteScreen(onNavigateBack: () -> Unit) {
         title = stringResource(R.string.settings_athlete),
         onNavigateBack = onNavigateBack
     ) {
-        NumericRow(
-            label = stringResource(R.string.settings_ftp),
-            value = profile.ftp,
-            unit = "W",
-            onValueChange = { scope.launch { prefs?.updateFtp(it) } }
+        ToggleRow(
+            label = stringResource(R.string.settings_use_karoo_ftp),
+            enabled = profile.useKarooFtp,
+            onToggle = { scope.launch { prefs?.updateUseKarooFtp(it) } }
         )
-        HintText(stringResource(R.string.settings_ftp_hint))
+        HintText(stringResource(R.string.settings_use_karoo_ftp_hint))
+
+        if (profile.useKarooFtp && profile.karooFtp > 0) {
+            InfoRow(
+                label = stringResource(R.string.settings_karoo_ftp),
+                value = "${profile.karooFtp} W"
+            )
+        } else {
+            NumericRow(
+                label = stringResource(R.string.settings_ftp),
+                value = profile.ftp,
+                unit = "W",
+                onValueChange = { scope.launch { prefs?.updateFtp(it) } }
+            )
+            HintText(stringResource(R.string.settings_ftp_hint))
+        }
 
         DecimalRow(
             label = stringResource(R.string.settings_weight),
@@ -65,6 +79,21 @@ fun AthleteScreen(onNavigateBack: () -> Unit) {
                     onValueChange = { scope.launch { prefs?.updateCp(it) } }
                 )
                 HintText(stringResource(R.string.settings_cp_hint))
+
+                NumericRow(
+                    label = stringResource(R.string.settings_max_power),
+                    value = profile.maxPower,
+                    unit = "W",
+                    onValueChange = { scope.launch { prefs?.updateMaxPower(it) } }
+                )
+                HintText(stringResource(R.string.settings_max_power_hint))
+
+                ToggleRow(
+                    label = stringResource(R.string.settings_use_three_param_model),
+                    enabled = profile.useThreeParamModel,
+                    onToggle = { scope.launch { prefs?.updateUseThreeParamModel(it) } }
+                )
+                HintText(stringResource(R.string.settings_use_three_param_model_hint))
             }
         }
 

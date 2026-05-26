@@ -18,7 +18,12 @@ data class WPrimeState(
     val recoveryRate: Double = 0.0,
     val timeToEmpty: Long = -1L,
     val timeToFull: Long = -1L,
-    val status: WPrimeStatus = WPrimeStatus.FRESH
+    val status: WPrimeStatus = WPrimeStatus.FRESH,
+    /** Maximum Power Available right now (Morton 3-parameter model). 0 when
+     *  disabled (athlete profile has no maxPower / useThreeParamModel off).
+     *  MPA = Pmax − (Pmax − CP) × ((W'max − W'balance) / W'max)² — so at full
+     *  W' it equals Pmax, and decays quadratically toward CP as W' depletes. */
+    val mpa: Int = 0,
 ) {
     companion object {
         /**

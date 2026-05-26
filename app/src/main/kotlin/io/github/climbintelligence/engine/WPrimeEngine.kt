@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlin.math.exp
+import kotlin.math.pow
 
 /**
  * Skiba differential W' Balance model.
@@ -32,7 +34,12 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
 
     companion object {
         private const val TAG = "WPrimeEngine"
-        private const val TAU = 546.0 // Skiba recovery time constant
+        /** Skiba recovery time-constant baseline. With the dynamic-τ formula
+         *  enabled, this is the long-coast asymptote ceiling (when the rider
+         *  is exactly at CP the formula reduces to TAU_BASE + TAU_FLOOR). */
+        private const val TAU_BASE = 546.0
+        /** Floor added to keep τ from collapsing to zero on deep-rest coasting. */
+        private const val TAU_FLOOR = 316.0
         private const val DT = 1.0    // 1 second update interval
         /** Ring-buffer cap for per-tick history. 86400 = 24h at 1Hz, ~2.8 MB. */
         const val MAX_HISTORY_SAMPLES = 86400
@@ -57,8 +64,14 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
     private var wBalance: Double = 20000.0
     private var wMax: Double = 20000.0
     private var cp: Int = 0
+    private var pMax: Int = 0
+    private var useThreeParamModel: Boolean = false
     private var lastUpdateTime: Long = 0L
     private var profileLoaded = false
+
+    // Rolling stats for the dynamic-τ formula. Reset on reset().
+    private var sumPowerBelowCp: Double = 0.0
+    private var countPowerBelowCp: Long = 0L
 
     /**
      * True while the Karoo ride is in [io.hammerhead.karooext.models.RideState.Paused].
@@ -76,6 +89,8 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
                 if (profile.isConfigured) {
                     val newMax = profile.wPrimeMax.toDouble()
                     cp = profile.effectiveCp
+                    pMax = profile.maxPower
+                    useThreeParamModel = profile.useThreeParamModel
                     if (!profileLoaded) {
                         wMax = newMax
                         wBalance = newMax
@@ -109,7 +124,16 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
 
         val now = state.timestamp
         val power = state.power.toDouble()
-        val recovery = (wMax - wBalance) / TAU
+
+        // Accumulate average power below CP for the dynamic-τ formula. Done
+        // BEFORE computing recovery so the current sample is reflected in τ
+        // when the rider is coasting.
+        if (power <= cp) {
+            sumPowerBelowCp += power
+            countPowerBelowCp++
+        }
+
+        val recovery = (wMax - wBalance) / currentTau()
 
         // Compute balance delta only when we have a previous timestamp to diff
         // against. On the very first tick we just seed lastUpdateTime + record
@@ -155,7 +179,8 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
             recoveryRate = recoveryRateVal,
             timeToEmpty = timeToEmpty,
             timeToFull = timeToFull,
-            status = WPrimeState.statusForPercentage(pct)
+            status = WPrimeState.statusForPercentage(pct),
+            mpa = computeMpa(),
         )
 
         // Append to history every tick where sensor data is flowing — including
@@ -180,7 +205,12 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
         if (!profileLoaded || cp == 0) return
         if (!pauseActive) return // belt-and-suspenders; only run while paused
 
-        val recovery = (wMax - wBalance) / TAU
+        // Pause is power=0 ≤ CP — feed the dynamic-τ rolling average so τ
+        // continues to adapt while the rider rests.
+        sumPowerBelowCp += 0.0
+        countPowerBelowCp++
+
+        val recovery = (wMax - wBalance) / currentTau()
 
         if (lastUpdateTime != 0L) {
             val rawDt = (now - lastUpdateTime) / 1000.0
@@ -190,7 +220,7 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
         lastUpdateTime = now
 
         val pct = wBalance / wMax * 100.0
-        val recoveryRateVal = (wMax - wBalance) / TAU
+        val recoveryRateVal = (wMax - wBalance) / currentTau()
         val timeToFull = if (recoveryRateVal > 0 && wBalance < wMax) {
             ((wMax - wBalance) / recoveryRateVal).toLong().coerceAtMost(3600L)
         } else -1L
@@ -203,10 +233,42 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
             recoveryRate = recoveryRateVal,
             timeToEmpty = -1L,
             timeToFull = timeToFull,
-            status = WPrimeState.statusForPercentage(pct)
+            status = WPrimeState.statusForPercentage(pct),
+            mpa = computeMpa(),
         )
 
         recordHistorySample(now, wBalance, pct, power = 0)
+    }
+
+    /**
+     * Dynamic τ adapts the recovery time-constant to how far the rider's
+     * coasting power is below CP. A bigger deficit (rider truly resting at
+     * 50W) means faster recovery (lower τ); a small deficit (just below CP)
+     * means slower recovery (longer τ).
+     *
+     * τ = TAU_BASE · exp(-0.01 · (CP − avgPowerBelowCP)) + TAU_FLOOR
+     *
+     * Falls back to TAU_BASE + TAU_FLOOR when no below-CP samples exist yet
+     * (start of a ride before any coasting).
+     */
+    private fun currentTau(): Double {
+        if (countPowerBelowCp == 0L) return TAU_BASE + TAU_FLOOR
+        val avgBelow = sumPowerBelowCp / countPowerBelowCp
+        val deltaCp = cp - avgBelow
+        return TAU_BASE * exp(-0.01 * deltaCp) + TAU_FLOOR
+    }
+
+    /**
+     * Morton 3-parameter Maximum Power Available. Returns 0 unless the rider
+     * has configured Pmax AND enabled the three-parameter toggle — the model
+     * needs a calibrated Pmax to mean anything. Negative W' (DEFICIT) clamps
+     * the fatigue ratio at 1.0 so MPA bottoms out at CP, not below.
+     */
+    private fun computeMpa(): Int {
+        if (!useThreeParamModel || pMax <= cp || wMax <= 0.0) return 0
+        val fatigueRatio = ((wMax - wBalance) / wMax).coerceIn(0.0, 1.0)
+        val mpaWatts = pMax - (pMax - cp) * fatigueRatio.pow(2.0)
+        return mpaWatts.toInt().coerceAtLeast(cp)
     }
 
     private fun recordHistorySample(
@@ -234,6 +296,8 @@ class WPrimeEngine(private val preferencesRepository: PreferencesRepository) {
     fun reset() {
         wBalance = wMax
         lastUpdateTime = 0L
+        sumPowerBelowCp = 0.0
+        countPowerBelowCp = 0L
         historyBuffer.clear()
         _wPrimeHistory.value = emptyList()
         _state.value = WPrimeState(balance = wMax, maxBalance = wMax)

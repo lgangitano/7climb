@@ -34,6 +34,7 @@ import io.hammerhead.karooext.models.FitEffect
 import io.hammerhead.karooext.models.OnStreamState
 import io.hammerhead.karooext.models.RideState
 import io.hammerhead.karooext.models.StreamState
+import io.hammerhead.karooext.models.UserProfile
 import io.github.climbintelligence.engine.ClimbStatsTracker
 import io.github.climbintelligence.engine.WPrimeEngine
 import io.github.climbintelligence.engine.PacingCalculator
@@ -193,6 +194,19 @@ class ClimbIntelligenceExtension : KarooExtension("climbintelligence", BuildConf
                     preferencesRepository.detectionSettingsFlow.collect { settings ->
                         _climbDetector?.updateSettings(settings)
                     }
+                }
+
+                // Bridge Karoo's user-profile FTP into our preferences so the
+                // W' / pacing engines pick up rider-configured FTP without
+                // forcing the rider to type it into both Karoo and 7climb.
+                val userProfileConsumerId = karooSystem.addConsumer { profile: UserProfile ->
+                    serviceScope.launch {
+                        preferencesRepository.updateKarooFtp(profile.ftp)
+                    }
+                }
+                connectionJobs += serviceScope.launch {
+                    try { kotlinx.coroutines.awaitCancellation() }
+                    finally { karooSystem.removeConsumer(userProfileConsumerId) }
                 }
 
                 // Wire data flow: ClimbDataService -> WPrimeEngine, PacingCalculator, ClimbDetector

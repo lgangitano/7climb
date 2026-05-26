@@ -30,6 +30,10 @@ class PreferencesRepository(private val context: Context) {
         private val KEY_CRR = doublePreferencesKey("crr")
         private val KEY_BIKE_WEIGHT = doublePreferencesKey("bike_weight")
         private val KEY_CP = intPreferencesKey("cp")
+        private val KEY_MAX_POWER = intPreferencesKey("max_power")
+        private val KEY_USE_KAROO_FTP = booleanPreferencesKey("use_karoo_ftp")
+        private val KEY_KAROO_FTP = intPreferencesKey("karoo_ftp")
+        private val KEY_USE_THREE_PARAM_MODEL = booleanPreferencesKey("use_three_param_model")
         private val KEY_PACING_MODE = stringPreferencesKey("pacing_mode")
 
         // Alert settings
@@ -73,7 +77,11 @@ class PreferencesRepository(private val context: Context) {
                 cda = prefs[KEY_CDA] ?: 0.321,
                 crr = prefs[KEY_CRR] ?: 0.005,
                 bikeWeight = prefs[KEY_BIKE_WEIGHT] ?: 8.0,
-                cp = prefs[KEY_CP] ?: 0
+                cp = prefs[KEY_CP] ?: 0,
+                maxPower = prefs[KEY_MAX_POWER] ?: 0,
+                useKarooFtp = prefs[KEY_USE_KAROO_FTP] ?: true,
+                karooFtp = prefs[KEY_KAROO_FTP] ?: 0,
+                useThreeParamModel = prefs[KEY_USE_THREE_PARAM_MODEL] ?: false,
             )
         }
         .distinctUntilChanged()
@@ -248,6 +256,25 @@ class PreferencesRepository(private val context: Context) {
 
     suspend fun updateCp(cp: Int) {
         context.dataStore.edit { it[KEY_CP] = cp.coerceIn(0, 500) }
+    }
+
+    suspend fun updateMaxPower(maxPower: Int) {
+        context.dataStore.edit { it[KEY_MAX_POWER] = maxPower.coerceIn(0, 2500) }
+    }
+
+    suspend fun updateUseKarooFtp(use: Boolean) {
+        context.dataStore.edit { it[KEY_USE_KAROO_FTP] = use }
+    }
+
+    /** Called from ClimbIntelligenceExtension when the Karoo's UserProfile
+     *  stream emits a new FTP value. Bypasses the rider-visible "manual FTP"
+     *  field, so flipping the Karoo's FTP doesn't overwrite their typed value. */
+    suspend fun updateKarooFtp(ftp: Int) {
+        context.dataStore.edit { it[KEY_KAROO_FTP] = ftp.coerceIn(0, 600) }
+    }
+
+    suspend fun updateUseThreeParamModel(use: Boolean) {
+        context.dataStore.edit { it[KEY_USE_THREE_PARAM_MODEL] = use }
     }
 
     suspend fun updatePacingMode(mode: PacingMode) {

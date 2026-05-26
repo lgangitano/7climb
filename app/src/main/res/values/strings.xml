@@ -134,6 +134,13 @@
     <string name="settings_bike_weight_hint">Total weight of your bike with accessories</string>
     <string name="settings_cp">CP (Critical Power)</string>
     <string name="settings_cp_hint">Set to 0 for automatic calculation (FTP × 0.95).\nOr enter your tested CP from a 3+12 min protocol.</string>
+    <string name="settings_use_karoo_ftp">Use FTP from Karoo</string>
+    <string name="settings_use_karoo_ftp_hint">Read FTP from the Karoo\'s rider profile instead of entering it here. Recommended — keeps a single source of truth.</string>
+    <string name="settings_karoo_ftp">Karoo FTP</string>
+    <string name="settings_max_power">P-max (1s sprint power)</string>
+    <string name="settings_max_power_hint">Best 1-second sprint power. Used by the Morton 3-parameter model to estimate Maximum Power Available (MPA) given current fatigue. 0 disables.</string>
+    <string name="settings_use_three_param_model">Use 3-parameter model</string>
+    <string name="settings_use_three_param_model_hint">Enables Morton P-max-aware MPA calculation. Needs a configured P-max above.</string>
     <string name="settings_advanced">Advanced</string>
     <string name="settings_advanced_hint">Only change if you know your values from testing</string>
     <string name="settings_wprime">W\' (Anaerobic Capacity)</string>
