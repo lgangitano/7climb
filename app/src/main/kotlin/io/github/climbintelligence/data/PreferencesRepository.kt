@@ -31,8 +31,9 @@ class PreferencesRepository(private val context: Context) {
         private val KEY_BIKE_WEIGHT = doublePreferencesKey("bike_weight")
         private val KEY_CP = intPreferencesKey("cp")
         private val KEY_MAX_POWER = intPreferencesKey("max_power")
-        private val KEY_USE_KAROO_FTP = booleanPreferencesKey("use_karoo_ftp")
+        private val KEY_USE_KAROO_PROFILE = booleanPreferencesKey("use_karoo_profile")
         private val KEY_KAROO_FTP = intPreferencesKey("karoo_ftp")
+        private val KEY_KAROO_WEIGHT = doublePreferencesKey("karoo_weight")
         private val KEY_USE_THREE_PARAM_MODEL = booleanPreferencesKey("use_three_param_model")
         private val KEY_PACING_MODE = stringPreferencesKey("pacing_mode")
 
@@ -79,8 +80,9 @@ class PreferencesRepository(private val context: Context) {
                 bikeWeight = prefs[KEY_BIKE_WEIGHT] ?: 8.0,
                 cp = prefs[KEY_CP] ?: 0,
                 maxPower = prefs[KEY_MAX_POWER] ?: 0,
-                useKarooFtp = prefs[KEY_USE_KAROO_FTP] ?: true,
+                useKarooProfile = prefs[KEY_USE_KAROO_PROFILE] ?: true,
                 karooFtp = prefs[KEY_KAROO_FTP] ?: 0,
+                karooWeight = prefs[KEY_KAROO_WEIGHT] ?: 0.0,
                 useThreeParamModel = prefs[KEY_USE_THREE_PARAM_MODEL] ?: false,
             )
         }
@@ -262,15 +264,19 @@ class PreferencesRepository(private val context: Context) {
         context.dataStore.edit { it[KEY_MAX_POWER] = maxPower.coerceIn(0, 2500) }
     }
 
-    suspend fun updateUseKarooFtp(use: Boolean) {
-        context.dataStore.edit { it[KEY_USE_KAROO_FTP] = use }
+    suspend fun updateUseKarooProfile(use: Boolean) {
+        context.dataStore.edit { it[KEY_USE_KAROO_PROFILE] = use }
     }
 
     /** Called from ClimbIntelligenceExtension when the Karoo's UserProfile
-     *  stream emits a new FTP value. Bypasses the rider-visible "manual FTP"
-     *  field, so flipping the Karoo's FTP doesn't overwrite their typed value. */
+     *  stream emits new values. Bypasses the rider-visible "manual" fields,
+     *  so flipping the Karoo's profile doesn't overwrite the typed values. */
     suspend fun updateKarooFtp(ftp: Int) {
         context.dataStore.edit { it[KEY_KAROO_FTP] = ftp.coerceIn(0, 600) }
+    }
+
+    suspend fun updateKarooWeight(weightKg: Double) {
+        context.dataStore.edit { it[KEY_KAROO_WEIGHT] = weightKg.coerceIn(0.0, 200.0) }
     }
 
     suspend fun updateUseThreeParamModel(use: Boolean) {

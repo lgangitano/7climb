@@ -25,13 +25,15 @@ fun AthleteScreen(onNavigateBack: () -> Unit) {
         onNavigateBack = onNavigateBack
     ) {
         ToggleRow(
-            label = stringResource(R.string.settings_use_karoo_ftp),
-            enabled = profile.useKarooFtp,
-            onToggle = { scope.launch { prefs?.updateUseKarooFtp(it) } }
+            label = stringResource(R.string.settings_use_karoo_profile),
+            enabled = profile.useKarooProfile,
+            onToggle = { scope.launch { prefs?.updateUseKarooProfile(it) } }
         )
-        HintText(stringResource(R.string.settings_use_karoo_ftp_hint))
+        HintText(stringResource(R.string.settings_use_karoo_profile_hint))
 
-        if (profile.useKarooFtp && profile.karooFtp > 0) {
+        // FTP row — read-only when toggle is on AND Karoo has a value;
+        // editable otherwise. Same pattern for weight below.
+        if (profile.useKarooProfile && profile.karooFtp > 0) {
             InfoRow(
                 label = stringResource(R.string.settings_karoo_ftp),
                 value = "${profile.karooFtp} W"
@@ -46,12 +48,19 @@ fun AthleteScreen(onNavigateBack: () -> Unit) {
             HintText(stringResource(R.string.settings_ftp_hint))
         }
 
-        DecimalRow(
-            label = stringResource(R.string.settings_weight),
-            value = profile.weight,
-            unit = "kg",
-            onValueChange = { scope.launch { prefs?.updateWeight(it) } }
-        )
+        if (profile.useKarooProfile && profile.karooWeight > 0.0) {
+            InfoRow(
+                label = stringResource(R.string.settings_karoo_weight),
+                value = "%.1f kg".format(profile.karooWeight)
+            )
+        } else {
+            DecimalRow(
+                label = stringResource(R.string.settings_weight),
+                value = profile.weight,
+                unit = "kg",
+                onValueChange = { scope.launch { prefs?.updateWeight(it) } }
+            )
+        }
 
         // Advanced (W', CP)
         SectionHeader(stringResource(R.string.settings_advanced))

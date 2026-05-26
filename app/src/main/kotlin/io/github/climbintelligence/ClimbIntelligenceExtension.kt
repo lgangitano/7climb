@@ -196,12 +196,13 @@ class ClimbIntelligenceExtension : KarooExtension("climbintelligence", BuildConf
                     }
                 }
 
-                // Bridge Karoo's user-profile FTP into our preferences so the
-                // W' / pacing engines pick up rider-configured FTP without
-                // forcing the rider to type it into both Karoo and 7climb.
+                // Bridge the Karoo's rider profile into our preferences so the
+                // W' / pacing engines pick up FTP + weight without forcing
+                // the rider to maintain those values in two places.
                 val userProfileConsumerId = karooSystem.addConsumer { profile: UserProfile ->
                     serviceScope.launch {
                         preferencesRepository.updateKarooFtp(profile.ftp)
+                        preferencesRepository.updateKarooWeight(profile.weight.toDouble())
                     }
                 }
                 connectionJobs += serviceScope.launch {
